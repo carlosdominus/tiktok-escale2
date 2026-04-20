@@ -745,32 +745,34 @@ app.post("/api/webhook/abacatepay", async (req, res) => {
   res.sendStatus(200);
 });
 
-// SPA Handling
-if (process.env.NODE_ENV === "production" || process.env.VERCEL) {
-  const distPath = path.join(process.cwd(), "dist");
-  app.use(express.static(distPath));
-  app.get("*", (req, res) => {
-    res.sendFile(path.join(distPath, "index.html"));
-  });
-}
-
-export default app;
-
+// Start the server
 async function startServer() {
   const PORT = 3000;
   
   if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
-    const { createServer } = await import("vite");
-    const vite = await createServer({
+    const { createServer: createViteServer } = await import("vite");
+    const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
-    
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`Server running on http://localhost:${PORT}`);
+    console.log("Vite dev middleware attached");
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
     });
+    console.log("Production static serving active");
   }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
 }
 
-startServer();
+startServer().catch(err => {
+  console.error("FATAL_SERVER_START_ERROR:", err);
+});
+
+export default app;
