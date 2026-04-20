@@ -18,47 +18,38 @@ let db: any;
 try {
   if (!admin.apps.length) {
     const rawServiceAccount = process.env.FIREBASE_SERVICE_ACCOUNT;
+    const configProjectId = appConfig.projectId;
     
     if (rawServiceAccount) {
       const serviceAccount = JSON.parse(rawServiceAccount.replace(/\\n/g, '\n'));
       admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount)
+        credential: admin.credential.cert(serviceAccount),
+        projectId: serviceAccount.project_id || configProjectId
       });
-      console.log(`Firebase Admin: Initialized with Service Account for project: ${serviceAccount.project_id}`);
-    } else if (appConfig.projectId) {
-      admin.initializeApp({
-        projectId: appConfig.projectId
-      });
-      console.log(`Firebase Admin: Initialized with Project ID: ${appConfig.projectId}`);
+      console.log(`Firebase Admin: Initialized with Service Account for: ${serviceAccount.project_id || configProjectId}`);
     } else {
-      admin.initializeApp();
-      console.log(`Firebase Admin: Initialized with default credentials`);
+      admin.initializeApp({
+        projectId: configProjectId
+      });
+      console.log(`Firebase Admin: Initialized with Project ID: ${configProjectId}`);
     }
   }
   
-  // Explicitly use the database ID from config
+  const adminApp = admin.app();
   const databaseId = appConfig.firestoreDatabaseId;
   
+  // Use getFirestore directly from the Admin SDK
   if (databaseId && databaseId !== "(default)") {
-    try {
-      // For Admin SDK, initialize specific database
-      db = admin.firestore(databaseId);
-      console.log(`Firestore: Using custom database Instance: ${databaseId}`);
-    } catch (dbErr: any) {
-      console.warn(`Warning: Could not initialize database '${databaseId}', falling back to default.`, dbErr.message);
-      db = admin.firestore();
-    }
+    db = getFirestore(adminApp, databaseId);
+    console.log(`Firestore: Connected to instance: ${databaseId}`);
   } else {
-    db = admin.firestore();
-    console.log(`Firestore: Using default database`);
-  }
-
-  // Final check to prevent 'undefined' errors
-  if (!db) {
-    throw new Error("Firestore Admin SDK failed to initialize - 'db' is undefined.");
+    db = getFirestore(adminApp);
+    console.log(`Firestore: Connected to default instance`);
   }
 } catch (error) {
   console.error("CRITICAL_FIREBASE_INIT_ERROR:", error);
+  // Fallback to avoid 'undefined' crash, though it will likely fail on calls
+  db = { collection: () => { throw new Error("Firestore failed to initialize. Check server logs."); } };
 }
 
 // Helper for Google Sheets Auth

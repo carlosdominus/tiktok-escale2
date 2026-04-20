@@ -223,14 +223,19 @@ export default function App() {
             email: currentUser.email,
             displayName: currentUser.displayName,
             photoURL: currentUser.photoURL,
+            customerName: currentUser.displayName || "",
+            customerEmail: currentUser.email || "",
+            customerPhone: "",
+            customerTaxId: "",
             role: "user",
             createdAt: new Date().toISOString()
           });
-          setCustomerData(prev => ({
-            ...prev,
+          setCustomerData({
             name: currentUser.displayName || "",
-            email: currentUser.email || ""
-          }));
+            email: currentUser.email || "",
+            phone: "",
+            taxId: ""
+          });
         } else {
           const data = userSnap.data();
           setCustomerData({
@@ -391,16 +396,18 @@ export default function App() {
     setIsGenerating(true);
     try {
       // 1. Save profile data to Firestore so it's ready for next time
+      // Using setDoc with merge: true is more robust than updateDoc for new accounts
       const userRef = doc(db, "users", user.uid);
       try {
-        await updateDoc(userRef, {
+        await setDoc(userRef, {
           customerName: customerData.name,
           customerEmail: customerData.email,
           customerPhone: customerData.phone,
           customerTaxId: customerData.taxId
-        });
+        }, { merge: true });
       } catch (saveErr) {
         console.error("Error auto-saving profile:", saveErr);
+        // We continue anyway so the user doesn't get blocked from paying
       }
 
       // 2. Generate PIX
