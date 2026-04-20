@@ -42,14 +42,15 @@ try {
   }
   
   const databaseId = appConfig.firestoreDatabaseId;
+  const adminApp = admin.app();
   
-  // Use the standard admin.firestore(id) which is very reliable
+  // Use getFirestore modular function which is more reliable in this environment
   if (databaseId && databaseId !== "(default)") {
-    db = admin.firestore(databaseId);
-    console.log(`Firestore connected to: ${databaseId}`);
+    db = getFirestore(adminApp, databaseId);
+    console.log(`Firestore connected to Instance: ${databaseId}`);
   } else {
-    db = admin.firestore();
-    console.log(`Firestore connected to default database`);
+    db = getFirestore(adminApp);
+    console.log(`Firestore connected to default Instance`);
   }
 } catch (error: any) {
   console.error("FIREBASE_INIT_ERROR:", error.message);
@@ -522,28 +523,31 @@ app.post("/api/pix/generate", async (req, res) => {
     }
     const saleId = saleRef.id;
 
-    // Using pixQrCode/create for direct PIX
+    // Using V2 Checkout for better conversion and compatibility
     const pixData = {
-      amount: numericAmountCents,
-      expiresIn: 3600,
-      description: `DominusScale - ${packageId}`.substring(0, 140),
+      frequency: "ONE_TIME",
+      methods: ["PIX"],
+      products: [
+        {
+          externalId: String(packageId).substring(0, 50),
+          name: `Arsenal Dominus - ${packageId}`.substring(0, 100),
+          quantity: 1,
+          price: numericAmountCents
+        }
+      ],
+      returnUrl: `${req.protocol}://${req.get('host')}/success`,
+      completionUrl: `${req.protocol}://${req.get('host')}/success`,
       customer: {
         name: String(customer.name).trim(),
         email: String(customer.email).trim(),
         cellphone: String(customer.phone).replace(/\D/g, ""),
         taxId: String(customer.taxId).replace(/\D/g, ""),
-      },
-      // Pass our internal saleId as metadata so we can identify it in the webhook
-      metadata: {
-        saleId: saleId,
-        userId: userId,
-        packageId: packageId
       }
     };
 
-    console.log("ABACATE_PAY_DEBUG: Generating PIX for sale:", saleId);
+    console.log("ABACATE_PAY_DEBUG: Creating V2 Checkout for sale:", saleId);
 
-    const response = await axios.post("https://api.abacatepay.com/v1/pixQrCode/create", pixData, {
+    const response = await axios.post("https://api.abacatepay.com/v2/checkout/create", pixData, {
       headers: {
         "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
@@ -555,8 +559,9 @@ app.post("/api/pix/generate", async (req, res) => {
     const apiResponse = response.data;
     const data = apiResponse.data;
     
-    if (!data || !data.brCode) {
-      throw new Error("A API da Abacate Pay não retornou um código PIX válido.");
+    // V2 Checkouts return a public URL
+    if (!data || !data.url) {
+      throw new Error("A API da Abacate Pay V2 não retornou uma URL de checkout válida.");
     }
 
     // Save the pending sale to Firestore
@@ -566,7 +571,7 @@ app.post("/api/pix/generate", async (req, res) => {
         packageId,
         amount: numericAmount,
         status: "pending",
-        pixCode: data.brCode,
+        pixCode: data.url, // Store the checkout URL here
         externalId: data.id,
         createdAt: new Date().toISOString(),
         customer: {
@@ -583,8 +588,8 @@ app.post("/api/pix/generate", async (req, res) => {
     }
 
     res.json({
-      pixCode: data.brCode,
-      qrCode: data.brCodeBase64,
+      pixCode: data.url,
+      qrCode: null,
       txId: data.id,
       saleId: saleId,
       isMock: false
@@ -616,7 +621,10 @@ app.post("/api/webhook/abacatepay", async (req, res) => {
 
   console.log("WEBHOOK_RECEIVED:", JSON.stringify(event, null, 2));
 
-  const isPaid = event.event === "billing.paid" || event.event === "pix.paid" || event.event === "billing.confirmed";
+  const isPaid = event.event === "billing.paid" || 
+                 event.event === "pix.paid" || 
+                 event.event === "billing.confirmed" || 
+                 event.event === "checkout.paid";
   
   if (isPaid) {
     const billingData = event.data || {};
