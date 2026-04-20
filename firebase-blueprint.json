@@ -1,0 +1,63 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and settings",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "user"] },
+        "customerName": { "type": "string" },
+        "customerEmail": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "customerTaxId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email"]
+    },
+    "Sale": {
+      "title": "Sale",
+      "description": "A completed sale transaction",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "packageId": { "type": "string" },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "paid", "expired"] },
+        "pixCode": { "type": "string" },
+        "externalId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "accounts": { "type": "string", "description": "Serialized JSON of accounts delivered" }
+      },
+      "required": ["userId", "packageId", "amount", "status"]
+    },
+    "WebhookLog": {
+      "title": "Webhook Log",
+      "description": "Logs from payment provider webhooks",
+      "type": "object",
+      "properties": {
+        "timestamp": { "type": "string", "format": "date-time" },
+        "event": { "type": "string" },
+        "payload": { "type": "object" }
+      },
+      "required": ["timestamp", "event", "payload"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile documents"
+    },
+    "/sales/{saleId}": {
+      "schema": "Sale",
+      "description": "Sales transactions"
+    },
+    "/webhook_logs/{logId}": {
+      "schema": "WebhookLog",
+      "description": "Logs for debugging webhooks"
+    }
+  }
+}
