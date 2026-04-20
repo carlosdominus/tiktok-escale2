@@ -13,7 +13,7 @@ import fs from "fs";
 const configPath = path.join(process.cwd(), "firebase-applet-config.json");
 const appConfig = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, "utf8")) : {};
 
-// Initialize Firebase Admin with absolute certainty
+// Initialize Firebase Admin with maximum stability
 let db: any;
 try {
   if (!admin.apps.length) {
@@ -28,7 +28,6 @@ try {
           projectId: serviceAccount.project_id || configProjectId
         });
       } catch (e) {
-        // If it's already an object or differently escaped
         admin.initializeApp({
           credential: admin.credential.cert(JSON.parse(rawServiceAccount)),
           projectId: configProjectId
@@ -44,24 +43,26 @@ try {
   const databaseId = appConfig.firestoreDatabaseId;
   const adminApp = admin.app();
   
-  // Use getFirestore modular function which is more reliable in this environment
+  // Use getFirestore from firebase-admin/firestore for modern compatibility
   if (databaseId && databaseId !== "(default)") {
     db = getFirestore(adminApp, databaseId);
-    console.log(`Firestore connected to Instance: ${databaseId}`);
+    console.log(`[FIREBASE] Connected to custom DB: ${databaseId}`);
   } else {
     db = getFirestore(adminApp);
-    console.log(`Firestore connected to default Instance`);
+    console.log(`[FIREBASE] Connected to default DB`);
   }
 } catch (error: any) {
-  console.error("FIREBASE_INIT_ERROR:", error.message);
-  // Fallback to a mock-like behavior that reports the real error
+  console.error("[FIREBASE_INIT_FATAL]:", error.message);
+  // Fail-safe mock to prevent undefined 'collection' catch
   db = { 
-    collection: () => ({ 
-      doc: () => ({ 
-        set: () => { throw new Error(`Banco de Dados não inicializado: ${error.message}`); },
-        get: () => { throw new Error(`Banco de Dados não inicializado: ${error.message}`); }
+    collection: (name: string) => ({ 
+      doc: (id: string) => ({ 
+        set: () => { throw new Error(`DB Error: ${error.message}`); }, 
+        get: () => { throw new Error(`DB Error: ${error.message}`); },
+        update: () => { throw new Error(`DB Error: ${error.message}`); }
       }),
-      where: () => ({ get: () => { throw new Error(`Banco de Dados não inicializado: ${error.message}`); } })
+      add: () => { throw new Error(`DB Error: ${error.message}`); },
+      where: () => ({ get: () => { throw new Error(`DB Error: ${error.message}`); } })
     }) 
   };
 }
@@ -745,9 +746,6 @@ app.post("/api/webhook/abacatepay", async (req, res) => {
   res.sendStatus(200);
 });
 
-// Health check
-app.get("/api/health", (req, res) => res.json({ status: "ok", time: new Date().toISOString() }));
-
 // Start the server
 async function startServer() {
   const PORT = 3000;
@@ -759,36 +757,34 @@ async function startServer() {
       appType: "spa",
     });
     
-    // API routes are already registered before this
+    // API routes are registered BEFORE vite.middlewares
     app.use(vite.middlewares);
     
-    // SPA Fallback for development
-    app.use('*', (req, res, next) => {
-      // If it's an API request that wasn't caught, return 404
-      if (req.originalUrl.startsWith('/api')) {
-        return res.status(404).json({ error: "API route not found" });
-      }
-      // Otherwise, let Vite handle it or fallback to index.html manually if needed
+    // Fallback for non-API routes to SPA index.html
+    app.get('*', (req, res, next) => {
+      if (req.originalUrl.startsWith('/api')) return next();
+      // Let Vite handle SPA routing
       next();
     });
     
-    console.log("Vite dev middleware attached");
+    console.log("[SERVER] Vite dev middleware attached");
   } else {
+    // Production: serve static files from dist/
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
-    console.log("Production static serving active");
+    console.log("[SERVER] Production static serving active");
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on port ${PORT}`);
+    console.log(`[SERVER] Running at http://localhost:${PORT}`);
   });
 }
 
 startServer().catch(err => {
-  console.error("FATAL_SERVER_START_ERROR:", err);
+  console.error("[SERVER_FATAL_ERROR]:", err);
 });
 
 export default app;
