@@ -56,7 +56,8 @@ try {
   // Fail-safe mock to prevent undefined 'collection' catch
   db = { 
     collection: (name: string) => ({ 
-      doc: (id: string) => ({ 
+      doc: (id?: string) => ({ 
+        id: id || "mock-id-" + Math.random().toString(36).substring(7),
         set: () => { throw new Error(`DB Error: ${error.message}`); }, 
         get: () => { throw new Error(`DB Error: ${error.message}`); },
         update: () => { throw new Error(`DB Error: ${error.message}`); }
@@ -524,8 +525,8 @@ app.post("/api/pix/generate", async (req, res) => {
     }
     const saleId = saleRef.id;
 
-    // Using V2 Checkout for better conversion and compatibility
-    const pixData = {
+    // Using V1 Billing for a stable checkout URL experience
+    const billingData = {
       frequency: "ONE_TIME",
       methods: ["PIX"],
       products: [
@@ -546,9 +547,9 @@ app.post("/api/pix/generate", async (req, res) => {
       }
     };
 
-    console.log("ABACATE_PAY_DEBUG: Creating V2 Checkout for sale:", saleId);
+    console.log(`[ABACATE_PAY] Creating V1 Billing for sale: ${saleId}`);
 
-    const response = await axios.post("https://api.abacatepay.com/v2/checkout/create", pixData, {
+    const response = await axios.post("https://api.abacatepay.com/v1/billing/create", billingData, {
       headers: {
         "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
@@ -560,9 +561,10 @@ app.post("/api/pix/generate", async (req, res) => {
     const apiResponse = response.data;
     const data = apiResponse.data;
     
-    // V2 Checkouts return a public URL
+    // Check for URL in the response
     if (!data || !data.url) {
-      throw new Error("A API da Abacate Pay V2 não retornou uma URL de checkout válida.");
+      console.error("[ABACATE_PAY_RESPONSE_ERR]:", JSON.stringify(apiResponse, null, 2));
+      throw new Error("A API da Abacate Pay não retornou uma URL de checkout válida.");
     }
 
     // Save the pending sale to Firestore
@@ -572,7 +574,7 @@ app.post("/api/pix/generate", async (req, res) => {
         packageId,
         amount: numericAmount,
         status: "pending",
-        pixCode: data.url, // Store the checkout URL here
+        pixCode: data.url, // Store the checkout URL
         externalId: data.id,
         createdAt: new Date().toISOString(),
         customer: {
@@ -581,12 +583,14 @@ app.post("/api/pix/generate", async (req, res) => {
         }
       });
     } catch (dbError: any) {
-      console.error("FIRESTORE_WRITE_ERROR:", dbError.message);
+      console.error("[FIRESTORE_WRITE_ERROR]:", dbError.message);
       return res.status(500).json({ 
         error: "Erro ao registrar venda", 
         details: "O servidor não conseguiu salvar a venda no banco de dados. " + dbError.message 
       });
     }
+
+    console.log(`[ABACATE_PAY] Success! URL: ${data.url}`);
 
     res.json({
       pixCode: data.url,
