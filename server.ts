@@ -21,6 +21,7 @@ try {
     const configProjectId = appConfig.projectId;
     
     if (rawServiceAccount) {
+      console.log("[FIREBASE] Using service account from environment");
       try {
         const serviceAccount = JSON.parse(rawServiceAccount.replace(/\\n/g, '\n'));
         admin.initializeApp({
@@ -34,36 +35,47 @@ try {
         });
       }
     } else {
+      console.log("[FIREBASE] Using Application Default Credentials (ADC)");
+      // Let it automatically pick up project from environment if possible
       admin.initializeApp({
         projectId: configProjectId
       });
     }
   }
   
-  const databaseId = appConfig.firestoreDatabaseId;
   const adminApp = admin.app();
+  const databaseId = appConfig.firestoreDatabaseId;
   
-  // Use getFirestore from firebase-admin/firestore for modern compatibility
+  console.log(`[FIREBASE] Project ID: ${adminApp.options.projectId}`);
+  
+  // Use getFirestore from firebase-admin/firestore
+  // If a named database is provided and isn't the default, try to init with it.
   if (databaseId && databaseId !== "(default)") {
     db = getFirestore(adminApp, databaseId);
-    console.log(`[FIREBASE] Connected to custom DB: ${databaseId}`);
+    console.log(`[FIREBASE] Target Database: ${databaseId}`);
   } else {
     db = getFirestore(adminApp);
-    console.log(`[FIREBASE] Connected to default DB`);
+    console.log(`[FIREBASE] Target Database: (default)`);
   }
+  
+  // Test write permission on startup to catch issues early
+  db.collection("_health").doc("check").set({ lastInit: new Date().toISOString() })
+    .then(() => console.log("[FIREBASE] Write permission VERIFIED"))
+    .catch((err: any) => console.error("[FIREBASE] Write permission FAILED:", err.message));
+
 } catch (error: any) {
   console.error("[FIREBASE_INIT_FATAL]:", error.message);
-  // Fail-safe mock to prevent undefined 'collection' catch
+  // Fail-safe mock to prevent backend from crashing on every request
   db = { 
     collection: (name: string) => ({ 
       doc: (id?: string) => ({ 
-        id: id || "mock-id-" + Math.random().toString(36).substring(7),
-        set: () => { throw new Error(`DB Error: ${error.message}`); }, 
-        get: () => { throw new Error(`DB Error: ${error.message}`); },
-        update: () => { throw new Error(`DB Error: ${error.message}`); }
+        id: id || "mock-" + Math.random().toString(36).substring(7),
+        set: () => { throw new Error(`DB not initialized: ${error.message}`); }, 
+        get: () => { throw new Error(`DB not initialized: ${error.message}`); },
+        update: () => { throw new Error(`DB not initialized: ${error.message}`); }
       }),
-      add: () => { throw new Error(`DB Error: ${error.message}`); },
-      where: () => ({ get: () => { throw new Error(`DB Error: ${error.message}`); } })
+      add: () => { throw new Error(`DB not initialized: ${error.message}`); },
+      where: () => ({ get: () => { throw new Error(`DB not initialized: ${error.message}`); } })
     }) 
   };
 }
