@@ -18,32 +18,33 @@ let db: any;
 try {
   if (!admin.apps.length) {
     const rawServiceAccount = process.env.FIREBASE_SERVICE_ACCOUNT;
-    const projectId = appConfig.projectId || "gen-lang-client-0493400479";
     
     if (rawServiceAccount) {
-      let serviceAccount;
-      try {
-        serviceAccount = JSON.parse(rawServiceAccount);
-      } catch (e) {
-        serviceAccount = JSON.parse(rawServiceAccount.replace(/\\n/g, '\n'));
-      }
+      const serviceAccount = JSON.parse(rawServiceAccount.replace(/\\n/g, '\n'));
       admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-        projectId: serviceAccount.project_id || projectId
+        credential: admin.credential.cert(serviceAccount)
       });
-      console.log(`Firebase Admin: Initialized with Service Account for project: ${serviceAccount.project_id || projectId}`);
+      console.log(`Firebase Admin: Initialized with Service Account for project: ${serviceAccount.project_id}`);
+    } else if (appConfig.projectId) {
+      admin.initializeApp({
+        projectId: appConfig.projectId
+      });
+      console.log(`Firebase Admin: Initialized with Project ID: ${appConfig.projectId}`);
     } else {
-      admin.initializeApp({
-        projectId: projectId
-      });
-      console.log(`Firebase Admin: Initialized with Project ID: ${projectId}`);
+      admin.initializeApp();
+      console.log(`Firebase Admin: Initialized with default credentials`);
     }
   }
   
   // Explicitly use the database ID from config
-  const databaseId = appConfig.firestoreDatabaseId || "(default)";
-  db = getFirestore(admin.app(), databaseId === "(default)" ? undefined : databaseId);
-  console.log(`Firestore: Using database: ${databaseId}`);
+  const databaseId = appConfig.firestoreDatabaseId;
+  if (databaseId && databaseId !== "(default)") {
+    db = admin.firestore(databaseId);
+    console.log(`Firestore: Using custom database: ${databaseId}`);
+  } else {
+    db = admin.firestore();
+    console.log(`Firestore: Using default database`);
+  }
 } catch (error) {
   console.error("CRITICAL_FIREBASE_INIT_ERROR:", error);
 }
@@ -543,19 +544,27 @@ app.post("/api/pix/generate", async (req, res) => {
     }
 
     // Save the pending sale to Firestore
-    await saleRef.set({
-      userId,
-      packageId,
-      amount: numericAmount,
-      status: "pending",
-      pixCode: data.brCode,
-      externalId: data.id,
-      createdAt: new Date().toISOString(),
-      customer: {
-        name: customer.name,
-        email: customer.email
-      }
-    });
+    try {
+      await saleRef.set({
+        userId,
+        packageId,
+        amount: numericAmount,
+        status: "pending",
+        pixCode: data.brCode,
+        externalId: data.id,
+        createdAt: new Date().toISOString(),
+        customer: {
+          name: customer.name,
+          email: customer.email
+        }
+      });
+    } catch (dbError: any) {
+      console.error("FIRESTORE_WRITE_ERROR:", dbError.message);
+      return res.status(500).json({ 
+        error: "Erro ao registrar venda", 
+        details: "O servidor não conseguiu salvar a venda no banco de dados. " + dbError.message 
+      });
+    }
 
     res.json({
       pixCode: data.brCode,

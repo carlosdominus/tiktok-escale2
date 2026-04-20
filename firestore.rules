@@ -17,7 +17,7 @@ service cloud.firestore {
     }
 
     function isOwner(userId) {
-      return isVerified() && request.auth.uid == userId;
+      return isSignedIn() && request.auth.uid == userId;
     }
 
     function isValidId(id) {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, ReactNode, useRef } from "react";
+import { useState, useEffect, useMemo, ReactNode, useRef, FormEvent } from "react";
 import { motion, AnimatePresence, useScroll, useTransform } from "motion/react";
 import { cn } from "@/lib/utils";
 import axios from "axios";
@@ -41,8 +41,9 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import QRCode from "qrcode";
-import { auth, googleProvider, signInWithPopup, signOut, onAuthStateChanged, db, doc, setDoc, getDoc, updateDoc, collection, query, where, onSnapshot, orderBy } from "./firebase";
+import { auth, googleProvider, signInWithPopup, signOut, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, db, doc, setDoc, getDoc, updateDoc, collection, query, where, onSnapshot, orderBy } from "./firebase";
 import { User } from "firebase/auth";
+import { Input } from "@/components/ui/input";
 
 interface PackageData {
   name: string;
@@ -128,6 +129,13 @@ export default function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [quantity, setQuantity] = useState(5);
   const [headlineWordIndex, setHeadlineWordIndex] = useState(0);
+  
+  // Email Auth State
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [isEmailLoading, setIsEmailLoading] = useState(false);
   
   const headlineWords = ["SEM LIMITES", "SEU ARSENAL", "EM ALTA ESCALA", "INDUSTRIAL"];
   
@@ -258,27 +266,67 @@ export default function App() {
   }, []);
 
   const handleLogin = async () => {
+    setIsAuthModalOpen(true);
+  };
+
+  const handleGoogleLogin = async () => {
     try {
       await signInWithPopup(auth, googleProvider);
-      toast.success("Login realizado com sucesso!");
+      toast.success("Login com Google realizado!");
+      setIsAuthModalOpen(false);
     } catch (error: any) {
       console.error("Login error:", error);
-      
-      // Filter out common user-cancellation errors
       if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') {
-        toast.info("Login cancelado pelo usuário.");
+        toast.info("Login cancelado.");
         return;
       }
+      toast.error("Erro no login com Google.");
+    }
+  };
 
-      let errorMessage = `Erro ao fazer login: ${error.message}`;
-      
-      if (error.code === 'auth/unauthorized-domain') {
-        errorMessage = "Domínio não autorizado no Firebase. Adicione tiktok-escale.vercel.app no console do Firebase.";
-      } else if (error.code === 'auth/network-request-failed' || error.message.includes('network-request-failed')) {
-        errorMessage = "Conexão falhou. Verifique sua rede ou se há algum bloqueador de anúncios (AdBlock) ativo.";
+  const handleEmailAuth = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!authEmail || !authPassword) {
+      toast.error("Preencha todos os campos.");
+      return;
+    }
+    
+    setIsEmailLoading(true);
+    try {
+      if (isRegistering) {
+        await createUserWithEmailAndPassword(auth, authEmail, authPassword);
+        toast.success("Conta criada com sucesso!");
+      } else {
+        await signInWithEmailAndPassword(auth, authEmail, authPassword);
+        toast.success("Login realizado!");
       }
-      
-      toast.error(errorMessage, { duration: 6000 });
+      setIsAuthModalOpen(false);
+    } catch (error: any) {
+      console.error("Auth error:", error);
+      let msg = "Erro na autenticação.";
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+        msg = "E-mail ou senha incorretos.";
+      } else if (error.code === 'auth/email-already-in-use') {
+        msg = "Este e-mail já está em uso.";
+      } else if (error.code === 'auth/weak-password') {
+        msg = "A senha deve ter no mínimo 6 caracteres.";
+      }
+      toast.error(msg);
+    } finally {
+      setIsEmailLoading(false);
+    }
+  };
+
+  const handlePasswordReset = async () => {
+    if (!authEmail) {
+      toast.error("Digite seu e-mail primeiro.");
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, authEmail);
+      toast.success("E-mail de recuperação enviado!");
+    } catch (error: any) {
+      toast.error("Erro ao enviar recuperação.");
     }
   };
 
@@ -601,7 +649,7 @@ export default function App() {
       </motion.nav>
     </div>
 
-      <main className="pt-10 md:pt-20">
+    <main className="pt-10 md:pt-20">
         {view === "home" ? (
           <>
             {/* Elite Hero Section */}
@@ -1214,6 +1262,96 @@ export default function App() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Auth Modal */}
+      <Dialog open={isAuthModalOpen} onOpenChange={setIsAuthModalOpen}>
+        <DialogContent className="sm:max-w-[400px] border-white/10 bg-black/95 text-white backdrop-blur-2xl p-0 overflow-hidden rounded-[2rem]">
+          <div className="p-8">
+            <DialogHeader className="mb-6">
+              <DialogTitle className="text-2xl font-black italic tracking-tighter uppercase text-center">
+                {isRegistering ? "Criar Arsenal" : "Acessar Arsenal"}
+              </DialogTitle>
+              <DialogDescription className="text-center text-white/40 font-medium">
+                Sua contingência de elite começa aqui.
+              </DialogDescription>
+            </DialogHeader>
+
+            <Tabs defaultValue="login" className="w-full" onValueChange={(val) => setIsRegistering(val === "register")}>
+              <TabsList className="grid w-full grid-cols-2 bg-white/5 rounded-xl p-1 mb-8">
+                <TabsTrigger value="login" className="rounded-lg data-[state=active]:bg-tiktok-red data-[state=active]:text-white font-bold italic text-[10px] uppercase tracking-widest">Entrar</TabsTrigger>
+                <TabsTrigger value="register" className="rounded-lg data-[state=active]:bg-tiktok-red data-[state=active]:text-white font-bold italic text-[10px] uppercase tracking-widest">Cadastrar</TabsTrigger>
+              </TabsList>
+
+              <div className="space-y-4 mb-6">
+                <Button 
+                  variant="outline" 
+                  className="w-full h-12 rounded-xl border-white/10 bg-white/5 hover:bg-white/10 text-white font-bold flex gap-3 transition-all"
+                  onClick={handleGoogleLogin}
+                >
+                  <svg className="w-5 h-5" viewBox="0 0 24 24">
+                    <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                    <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                    <path fill="currentColor" d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.06H2.18c-.77 1.56-1.21 3.31-1.21 5.14s.44 3.58 1.21 5.14l3.66-2.84z" />
+                    <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                  </svg>
+                  Continuar com Google
+                </Button>
+
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-white/5"></span></div>
+                  <div className="relative flex justify-center text-[9px] uppercase font-black tracking-[0.3em]"><span className="bg-black px-2 text-white/20">OU</span></div>
+                </div>
+
+                <form onSubmit={handleEmailAuth} className="space-y-4">
+                  <div className="space-y-2">
+                    <div className="text-[10px] font-black uppercase tracking-widest text-white/40 ml-1">E-mail</div>
+                    <Input 
+                      type="email" 
+                      placeholder="seu@email.com" 
+                      className="bg-white/5 border-white/10 rounded-xl h-11 focus:border-tiktok-red transition-all"
+                      value={authEmail}
+                      onChange={(e) => setAuthEmail(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="text-[10px] font-black uppercase tracking-widest text-white/40 ml-1">Senha</div>
+                    <Input 
+                      type="password" 
+                      placeholder="••••••••" 
+                      className="bg-white/5 border-white/10 rounded-xl h-11 focus:border-tiktok-red transition-all"
+                      value={authPassword}
+                      onChange={(e) => setAuthPassword(e.target.value)}
+                    />
+                  </div>
+
+                  {!isRegistering && (
+                    <button 
+                      type="button" 
+                      onClick={handlePasswordReset}
+                      className="text-[10px] font-bold text-tiktok-cyan/60 hover:text-tiktok-cyan transition-all ml-1"
+                    >
+                      Esqueceu a senha?
+                    </button>
+                  )}
+
+                  <Button 
+                    type="submit" 
+                    disabled={isEmailLoading}
+                    className="w-full h-12 rounded-xl bg-tiktok-red hover:bg-tiktok-red/90 text-white font-black italic tracking-tighter uppercase text-base shadow-[0_0_20px_rgba(255,29,77,0.3)] transition-all"
+                  >
+                    {isEmailLoading ? "Processando..." : (isRegistering ? "Criar Conta" : "Entrar")}
+                  </Button>
+                </form>
+              </div>
+            </Tabs>
+          </div>
+          
+          <div className="bg-white/[0.02] p-4 text-center border-t border-white/5">
+            <p className="text-[9px] font-medium text-white/20 italic tracking-tight">SISTEMA DE CONTINGÊNCIA PROTEGIDO POR PROTOCOLO MILITAR.</p>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+
