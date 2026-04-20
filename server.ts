@@ -38,12 +38,24 @@ try {
   
   // Explicitly use the database ID from config
   const databaseId = appConfig.firestoreDatabaseId;
+  
   if (databaseId && databaseId !== "(default)") {
-    db = admin.firestore(databaseId);
-    console.log(`Firestore: Using custom database: ${databaseId}`);
+    try {
+      // For Admin SDK, initialize specific database
+      db = admin.firestore(databaseId);
+      console.log(`Firestore: Using custom database Instance: ${databaseId}`);
+    } catch (dbErr: any) {
+      console.warn(`Warning: Could not initialize database '${databaseId}', falling back to default.`, dbErr.message);
+      db = admin.firestore();
+    }
   } else {
     db = admin.firestore();
     console.log(`Firestore: Using default database`);
+  }
+
+  // Final check to prevent 'undefined' errors
+  if (!db) {
+    throw new Error("Firestore Admin SDK failed to initialize - 'db' is undefined.");
   }
 } catch (error) {
   console.error("CRITICAL_FIREBASE_INIT_ERROR:", error);
