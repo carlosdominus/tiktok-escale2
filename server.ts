@@ -745,6 +745,9 @@ app.post("/api/webhook/abacatepay", async (req, res) => {
   res.sendStatus(200);
 });
 
+// Health check
+app.get("/api/health", (req, res) => res.json({ status: "ok", time: new Date().toISOString() }));
+
 // Start the server
 async function startServer() {
   const PORT = 3000;
@@ -755,7 +758,20 @@ async function startServer() {
       server: { middlewareMode: true },
       appType: "spa",
     });
+    
+    // API routes are already registered before this
     app.use(vite.middlewares);
+    
+    // SPA Fallback for development
+    app.use('*', (req, res, next) => {
+      // If it's an API request that wasn't caught, return 404
+      if (req.originalUrl.startsWith('/api')) {
+        return res.status(404).json({ error: "API route not found" });
+      }
+      // Otherwise, let Vite handle it or fallback to index.html manually if needed
+      next();
+    });
+    
     console.log("Vite dev middleware attached");
   } else {
     const distPath = path.join(process.cwd(), "dist");
@@ -767,7 +783,7 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Server running on port ${PORT}`);
   });
 }
 
