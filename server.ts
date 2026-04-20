@@ -21,35 +21,48 @@ try {
     const configProjectId = appConfig.projectId;
     
     if (rawServiceAccount) {
-      const serviceAccount = JSON.parse(rawServiceAccount.replace(/\\n/g, '\n'));
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-        projectId: serviceAccount.project_id || configProjectId
-      });
-      console.log(`Firebase Admin: Initialized with Service Account for: ${serviceAccount.project_id || configProjectId}`);
+      try {
+        const serviceAccount = JSON.parse(rawServiceAccount.replace(/\\n/g, '\n'));
+        admin.initializeApp({
+          credential: admin.credential.cert(serviceAccount),
+          projectId: serviceAccount.project_id || configProjectId
+        });
+      } catch (e) {
+        // If it's already an object or differently escaped
+        admin.initializeApp({
+          credential: admin.credential.cert(JSON.parse(rawServiceAccount)),
+          projectId: configProjectId
+        });
+      }
     } else {
       admin.initializeApp({
         projectId: configProjectId
       });
-      console.log(`Firebase Admin: Initialized with Project ID: ${configProjectId}`);
     }
   }
   
-  const adminApp = admin.app();
   const databaseId = appConfig.firestoreDatabaseId;
   
-  // Use getFirestore directly from the Admin SDK
+  // Use the standard admin.firestore(id) which is very reliable
   if (databaseId && databaseId !== "(default)") {
-    db = getFirestore(adminApp, databaseId);
-    console.log(`Firestore: Connected to instance: ${databaseId}`);
+    db = admin.firestore(databaseId);
+    console.log(`Firestore connected to: ${databaseId}`);
   } else {
-    db = getFirestore(adminApp);
-    console.log(`Firestore: Connected to default instance`);
+    db = admin.firestore();
+    console.log(`Firestore connected to default database`);
   }
-} catch (error) {
-  console.error("CRITICAL_FIREBASE_INIT_ERROR:", error);
-  // Fallback to avoid 'undefined' crash, though it will likely fail on calls
-  db = { collection: () => { throw new Error("Firestore failed to initialize. Check server logs."); } };
+} catch (error: any) {
+  console.error("FIREBASE_INIT_ERROR:", error.message);
+  // Fallback to a mock-like behavior that reports the real error
+  db = { 
+    collection: () => ({ 
+      doc: () => ({ 
+        set: () => { throw new Error(`Banco de Dados não inicializado: ${error.message}`); },
+        get: () => { throw new Error(`Banco de Dados não inicializado: ${error.message}`); }
+      }),
+      where: () => ({ get: () => { throw new Error(`Banco de Dados não inicializado: ${error.message}`); } })
+    }) 
+  };
 }
 
 // Helper for Google Sheets Auth
