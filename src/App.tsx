@@ -263,12 +263,19 @@ export default function App() {
       toast.success("Login realizado com sucesso!");
     } catch (error: any) {
       console.error("Login error:", error);
+      
+      // Filter out common user-cancellation errors
+      if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') {
+        toast.info("Login cancelado pelo usuário.");
+        return;
+      }
+
       let errorMessage = `Erro ao fazer login: ${error.message}`;
       
       if (error.code === 'auth/unauthorized-domain') {
         errorMessage = "Domínio não autorizado no Firebase. Adicione tiktok-escale.vercel.app no console do Firebase.";
       } else if (error.code === 'auth/network-request-failed' || error.message.includes('network-request-failed')) {
-        errorMessage = "Conexão falhou. Verifique sua internet ou se há algum bloqueador de anúncios (AdBlock) ativo.";
+        errorMessage = "Conexão falhou. Verifique sua rede ou se há algum bloqueador de anúncios (AdBlock) ativo.";
       }
       
       toast.error(errorMessage, { duration: 6000 });
