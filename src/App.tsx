@@ -390,7 +390,20 @@ export default function App() {
 
     setIsGenerating(true);
     try {
-      // Robust price parsing from spreadsheet
+      // 1. Save profile data to Firestore so it's ready for next time
+      const userRef = doc(db, "users", user.uid);
+      try {
+        await updateDoc(userRef, {
+          customerName: customerData.name,
+          customerEmail: customerData.email,
+          customerPhone: customerData.phone,
+          customerTaxId: customerData.taxId
+        });
+      } catch (saveErr) {
+        console.error("Error auto-saving profile:", saveErr);
+      }
+
+      // 2. Generate PIX
       const cleanedPrice = selectedPackage.price.replace(/[^\d.,]/g, "");
       const basePrice = cleanedPrice.includes(",") && cleanedPrice.indexOf(",") > cleanedPrice.indexOf(".") 
         ? parseFloat(cleanedPrice.replace(/\./g, "").replace(",", "."))
@@ -415,17 +428,6 @@ export default function App() {
       const data = response.data;
       console.log("DEBUG: PIX Response received:", data);
 
-      // Save customer data to Firestore for future use
-      if (user) {
-        const userRef = doc(db, "users", user.uid);
-        await updateDoc(userRef, {
-          customerName: customerData.name,
-          customerEmail: customerData.email,
-          customerPhone: customerData.phone,
-          customerTaxId: customerData.taxId
-        });
-      }
-      
       // Handle PIX data response
       if (data.pixCode && data.pixCode.startsWith("http")) {
         console.log("DEBUG: Handling as Checkout URL");
