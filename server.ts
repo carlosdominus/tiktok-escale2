@@ -36,7 +36,6 @@ try {
       }
     } else {
       console.log("[FIREBASE] Using Application Default Credentials (ADC)");
-      // Let it automatically pick up project from environment if possible
       admin.initializeApp({
         projectId: configProjectId
       });
@@ -44,28 +43,19 @@ try {
   }
   
   const adminApp = admin.app();
-  const databaseId = appConfig.firestoreDatabaseId;
   
+  // FORCE USE OF (DEFAULT) DATABASE to avoid named-instance propagation issues
+  db = getFirestore(adminApp);
   console.log(`[FIREBASE] Project ID: ${adminApp.options.projectId}`);
+  console.log(`[FIREBASE] Using (default) database for higher reliability`);
   
-  // Use getFirestore from firebase-admin/firestore
-  // If a named database is provided and isn't the default, try to init with it.
-  if (databaseId && databaseId !== "(default)") {
-    db = getFirestore(adminApp, databaseId);
-    console.log(`[FIREBASE] Target Database: ${databaseId}`);
-  } else {
-    db = getFirestore(adminApp);
-    console.log(`[FIREBASE] Target Database: (default)`);
-  }
-  
-  // Test write permission on startup to catch issues early
-  db.collection("_health").doc("check").set({ lastInit: new Date().toISOString() })
-    .then(() => console.log("[FIREBASE] Write permission VERIFIED"))
-    .catch((err: any) => console.error("[FIREBASE] Write permission FAILED:", err.message));
+  // Test write permission on startup
+  db.collection("_health").doc("check").set({ lastInit: new Date().toISOString(), mode: "default_db" })
+    .then(() => console.log("[FIREBASE] Write permission VERIFIED on (default) db"))
+    .catch((err: any) => console.error("[FIREBASE] Write permission FAILED on (default) db:", err.message));
 
 } catch (error: any) {
   console.error("[FIREBASE_INIT_FATAL]:", error.message);
-  // Fail-safe mock to prevent backend from crashing on every request
   db = { 
     collection: (name: string) => ({ 
       doc: (id?: string) => ({ 
@@ -622,6 +612,31 @@ app.post("/api/pix/generate", async (req, res) => {
 });
 
 // Webhook for Abacate Pay
+app.get("/api/debug", async (req, res) => {
+  try {
+    const salesSnap = await db.collection("sales").orderBy("createdAt", "desc").limit(20).get();
+    const recentSales = salesSnap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
+
+    const logsSnap = await db.collection("webhook_logs").orderBy("timestamp", "desc").limit(20).get();
+    const webhookLogs = logsSnap.docs.map((doc: any) => doc.data());
+
+    res.json({
+      firebase: "OK - Conectado ao BD (default)",
+      env: {
+        hasAbacateKey: !!process.env.ABACATE_PAY_API_KEY,
+        hasServiceAccount: !!process.env.FIREBASE_SERVICE_ACCOUNT
+      },
+      config: {
+        databaseId: "(default)"
+      },
+      recentSales,
+      webhookLogs
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post("/api/webhook/abacatepay", async (req, res) => {
   const event = req.body;
   

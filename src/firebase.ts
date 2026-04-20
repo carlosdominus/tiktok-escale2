@@ -13,7 +13,8 @@ import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, query, where,
 import firebaseConfig from '../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig as any);
-export const db = getFirestore(app, (firebaseConfig as any).firestoreDatabaseId);
+// Force use of (default) database to match server-side fix
+export const db = getFirestore(app);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 

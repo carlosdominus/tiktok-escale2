@@ -117,8 +117,10 @@ export default function App() {
   const [isPixModalOpen, setIsPixModalOpen] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
-  const [view, setView] = useState<"home" | "orders">("home");
+  const [view, setView] = useState<"home" | "orders" | "admin">("home");
   const [orders, setOrders] = useState<any[]>([]);
+  const [debugData, setDebugData] = useState<any>(null);
+  const [isDebugLoading, setIsDebugLoading] = useState(false);
   const [isSuccessPage, setIsSuccessPage] = useState(window.location.pathname === "/success");
   const [customerData, setCustomerData] = useState({
     name: "",
@@ -339,10 +341,33 @@ export default function App() {
     try {
       await signOut(auth);
       toast.success("Sessão encerrada.");
+      setView("home");
     } catch (error) {
       console.error("Logout error:", error);
     }
   };
+
+  const isAdmin = user?.email === "carlos@dominus.site";
+
+  const fetchDebugData = async () => {
+    setIsDebugLoading(true);
+    try {
+      const response = await axios.get("/api/debug");
+      setDebugData(response.data);
+    } catch (error) {
+      console.error("DEBUG_FETCH_ERR:", error);
+    } finally {
+      setIsDebugLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (view === "admin") {
+      fetchDebugData();
+      const interval = setInterval(fetchDebugData, 10000);
+      return () => clearInterval(interval);
+    }
+  }, [view]);
 
   const handleBuy = async (pkg: PackageData) => {
     if (!user) {
@@ -641,6 +666,16 @@ export default function App() {
                        <p className="font-bold">{user.displayName}</p>
                        <p className="text-sm text-white/50">{user.email}</p>
                      </div>
+
+                     {isAdmin && (
+                       <Button 
+                         variant="outline" 
+                         className="w-full border-tiktok-cyan/20 text-tiktok-cyan hover:bg-tiktok-cyan/10" 
+                         onClick={() => setView("admin")}
+                       >
+                         <ShieldCheck className="w-4 h-4 mr-2" /> <span className="font-black italic">Painel Admin</span>
+                       </Button>
+                     )}
                      <Button variant="destructive" className="w-full bg-tiktok-red" onClick={handleLogout}>
                        <LogOut className="w-4 h-4 mr-2" /> <span className="text-white font-black italic">Sair</span>
                      </Button>
@@ -985,7 +1020,7 @@ export default function App() {
           </footer>
         </div>
       </>
-    ) : (
+    ) : view === "orders" ? (
       <div className="max-w-5xl mx-auto px-4 md:px-6 py-10 md:py-16 space-y-8 md:space-y-12 min-h-screen relative z-20">
         {/* Aesthetic Background for Orders View */}
         <div className="fixed inset-0 bg-mesh opacity-[0.05] pointer-events-none -z-10" />
@@ -1128,8 +1163,109 @@ export default function App() {
           )}
         </div>
       </div>
-    )}
-  </main>
+    ) : view === "admin" ? (
+        <div className="max-w-6xl mx-auto px-4 md:px-6 pt-32 pb-20">
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-8"
+          >
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+              <div>
+                <h2 className="text-5xl font-black italic tracking-tighter uppercase text-white leading-none">Central de Comando</h2>
+                <p className="text-tiktok-cyan font-bold uppercase tracking-widest text-xs mt-3 flex items-center gap-2">
+                  <span className="w-2 h-2 bg-tiktok-cyan rounded-full animate-pulse" /> MONITORAMENTO EM TEMPO REAL
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <Button 
+                  onClick={fetchDebugData} 
+                  disabled={isDebugLoading}
+                  variant="outline" 
+                  className="rounded-full border-white/10 bg-white/5 text-white/50 hover:text-white"
+                >
+                  <TrendingUp className={cn("w-4 h-4 mr-2", isDebugLoading && "animate-spin")} /> Atualizar
+                </Button>
+                <Button 
+                  onClick={() => setView("home")} 
+                  className="rounded-full bg-white text-black font-black italic uppercase tracking-tighter hover:bg-tiktok-cyan transition-all"
+                >
+                  Sair do Painel
+                </Button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <Card className="bg-white/5 border-white/10 rounded-[32px] p-6">
+                <p className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-4">Status Firebase</p>
+                <div className="flex items-center gap-3">
+                   <div className={cn("w-3 h-3 rounded-full", debugData?.firebase?.includes("OK") ? "bg-tiktok-cyan animate-pulse shadow-[0_0_10px_rgba(1,251,247,0.5)]" : "bg-tiktok-red")} />
+                   <p className="text-sm font-bold text-white/80">{debugData?.firebase || "Carregando..."}</p>
+                </div>
+              </Card>
+              <Card className="bg-white/5 border-white/10 rounded-[32px] p-6">
+                <p className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-4">API Abacate Pay</p>
+                <div className="flex items-center gap-3">
+                   <div className={cn("w-3 h-3 rounded-full", debugData?.env?.hasAbacateKey ? "bg-tiktok-cyan animate-pulse shadow-[0_0_10px_rgba(1,251,247,0.5)]" : "bg-tiktok-red")} />
+                   <p className="text-sm font-bold text-white/80">{debugData?.env?.hasAbacateKey ? "Chave Configurada" : "ERRO: Chave Ausente"}</p>
+                </div>
+              </Card>
+              <Card className="bg-white/5 border-white/10 rounded-[32px] p-6">
+                <p className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-4">Base de Dados</p>
+                <p className="text-xs font-mono text-white/50">{debugData?.config?.databaseId || "Default"}</p>
+              </Card>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              <div className="space-y-6">
+                <h3 className="text-xl font-black italic tracking-tight uppercase text-white/50">Fluxo de Vendas (Sales)</h3>
+                <div className="space-y-4">
+                  {debugData?.recentSales?.map((sale: any) => (
+                    <div key={sale.id} className="bg-white/[0.02] border border-white/5 p-5 rounded-2xl flex items-center justify-between">
+                      <div>
+                        <p className="text-[10px] font-mono text-white/20 mb-1">{sale.id}</p>
+                        <p className="font-bold text-white">{sale.package}</p>
+                        <p className="text-[10px] text-white/40">{new Date(sale.createdAt).toLocaleString()}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-tiktok-cyan font-black italic">R$ {sale.amount}</p>
+                        <Badge className={cn(
+                          "mt-1 uppercase text-[8px] font-black italic tracking-widest",
+                          sale.status === "paid" ? "bg-tiktok-cyan/20 text-tiktok-cyan" : "bg-white/5 text-white/30"
+                        )}>
+                          {sale.status}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                <h3 className="text-xl font-black italic tracking-tight uppercase text-white/50">Atividade de Webhooks</h3>
+                <div className="space-y-4 overflow-hidden">
+                   {debugData?.webhookLogs?.length > 0 ? debugData.webhookLogs.map((log: any, idx: number) => (
+                     <div key={idx} className="bg-black/40 border border-white/5 p-4 rounded-xl font-mono text-[10px] space-y-2">
+                        <div className="flex justify-between items-center text-tiktok-cyan">
+                           <span>{log.event}</span>
+                           <span>{new Date(log.timestamp).toLocaleTimeString()}</span>
+                        </div>
+                        <div className="text-white/40 break-all bg-black/20 p-2 rounded">
+                           {JSON.stringify(log.payload)}
+                        </div>
+                     </div>
+                   )) : (
+                     <div className="py-20 text-center border border-dashed border-white/10 rounded-3xl">
+                        <p className="text-white/20 font-bold uppercase tracking-widest text-[10px]">Nenhum log de webhook capturado ainda.</p>
+                     </div>
+                   )}
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      ) : null}
+    </main>
 
       <Dialog open={isPixModalOpen} onOpenChange={setIsPixModalOpen}>
         <DialogContent className="sm:max-w-[440px] rounded-[32px] p-0 overflow-hidden border-white/10 bg-black shadow-[0_0_100px_rgba(0,0,0,1)]">
